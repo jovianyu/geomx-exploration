@@ -12,7 +12,7 @@ library(tidyverse)
 library(readxl)
 library(pheatmap)
 library(GSVA)
-
+ 
 STR_DATA <- "data/"
 STR_OUTPUT <- "output/"
 LOG_TARGET_GS <- FALSE
