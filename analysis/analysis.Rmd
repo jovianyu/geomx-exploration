@@ -1,0 +1,224 @@
+---
+title: "GeoMX - SPORE"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Loading libraries
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+library(pheatmap)
+library(GSVA)
+
+STR_DATA <- "data/"
+STR_OUTPUT <- "output/"
+LOG_TARGET_GS <- FALSE
+```
+
+# Reading in Excel sheets
+
+```{r data}
+samples <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 1) %>%
+  mutate(
+    celltype = ifelse(Tumor, "Tumor", ifelse(Stroma, "Stroma", "Tumor and Stroma")),
+    segmentname = paste(celltype, Region, SlideName, ROILabel, sep = " | ")
+  )
+
+counts <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 3) %>%
+  rename(
+    !!! setNames(samples$SegmentDisplayName, samples$segmentname),
+    gene = TargetName
+  )
+
+targets <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 2)
+
+target_groups <- targets$TargetGroup %>%
+  paste(sep = ",") %>%
+  strsplit(",") %>%
+  unlist() %>%
+  trimws() %>%
+  unique()
+target_groups <- target_groups[!grepl("P8", target_groups)]
+target_groups <- target_groups[!grepl("P3", target_groups)]
+target_groups <- target_groups[!grepl("Test", target_groups)]
+target_groups <- target_groups[!grepl("All Targets", target_groups)]
+
+fun_gene_sets <- function(target_group, tib_targets = targets) {
+  tib_targets %>%
+    filter(grepl(target_group, TargetGroup)) %>%
+    pull(TargetName) %>%
+    return()
+}
+
+gene_sets <- lapply(target_groups, fun_gene_sets)
+names(gene_sets) <- target_groups
+
+#   genes <- read_excel(paste0(STR_DATA,"genes.xlsx"), sheet = 2)
+#   gene_annotations <- tibble(
+#       gene = as.vector(genes$gene),
+#       `Marker` = as.vector(genes$group)
+#     ) %>%
+#     column_to_rownames(var = "gene") %>%
+#     as.data.frame()
+# } else {
+if(LOG_TARGET_GS) {
+  selected_gene_sets <- gene_sets[c("Adaptive Immune System", "Innate Immune System", "Cytokine Signaling in Immune system", "Programmed Cell Death", "DNA Repair")]
+  selected_genes <- tibble(gene = unlist(unique(flatten(selected_gene_sets))))
+  for(target_group in names(selected_gene_sets)) {
+    genes <- selected_gene_sets[[target_group]]
+    selected_genes <- selected_genes %>%
+      mutate(
+        !!target_group := ifelse(gene %in% genes, target_group, NA)
+      )
+  }
+
+  gene_annotations <- tibble(
+    gene = as.vector(selected_genes$gene),
+    `Target Groups` = selected_genes[names(selected_gene_sets)] %>%
+      apply(1, na.omit) %>%
+      lapply(paste, collapse = ",") %>%
+      as.vector()
+    ) %>%
+    arrange(gene) %>%
+    column_to_rownames(var = "gene") %>%
+    as.data.frame()
+  
+} else {
+  selected_genes <- read_excel(
+    paste0(STR_DATA,"PanImmune_GeneSet_Definitions.xlsx"),
+    sheet = 2,
+    col_names = c("geneset", "gene"),
+    skip = 1
+  ) %>%
+    filter(gene %in% targets$HUGOSymbol)
+  
+  tib_gene_sets <- selected_genes %>%
+    group_by(geneset) %>%
+    summarise(genes = list(gene)) %>%
+    mutate(genes = as.vector(genes))
+  gene_sets <- tib_gene_sets$genes
+  names(gene_sets) <- tib_gene_sets$geneset
+
+  gene_annotations <- selected_genes %>%
+    group_by(gene) %>%
+    summarise(genesets = paste(sort(unique(geneset)),collapse=", ")) %>%
+    arrange(gene) %>%
+    column_to_rownames(var = "gene") %>%
+    as.data.frame()
+
+  selected_genes_mini <- read_excel(
+    paste0(STR_DATA,"PanImmune_GeneSet_Definitions.xlsx"),
+    sheet = 3,
+    skip = 6,
+    n_max = 5,
+    col_names = c("geneset", "name"),
+    col_types = c("text", "skip", "skip", "text")
+    ) %>%
+    left_join(selected_genes)
+
+  tib_gene_sets_mini <- selected_genes_mini %>%
+    group_by(geneset) %>%
+    summarise(genes = list(gene)) %>%
+    mutate(genes = as.vector(genes))
+  gene_sets_mini <- tib_gene_sets_mini$genes
+  names(gene_sets_mini) <- tib_gene_sets_mini$geneset
+
+  gene_annotations_mini <- selected_genes_mini %>%
+    group_by(gene) %>%
+    summarise(genesets = paste(sort(unique(geneset)),collapse=", ")) %>%
+    arrange(gene) %>%
+    column_to_rownames(var = "gene") %>%
+    as.data.frame()
+}
+
+
+
+```
+
+# Filtering for ROI/Segments of interest, genes
+
+```{r filter}
+filterPatient <- function(patient) {
+  counts %>%
+    select(
+      gene,
+      samples %>%
+        filter(
+          Patient == patient,
+          !grepl("and", celltype)
+        ) %>%
+        select(segmentname) %>%
+        unlist() %>%
+        as.vector()
+    ) %>%
+    return()
+}
+
+selectCounts <- function(selected_patients, annotations) {
+  selected_counts <- selected_patients %>%
+    filter(
+      gene %in% rownames(annotations)
+    ) %>%
+    arrange(
+      gene
+    ) %>%
+    column_to_rownames(var = "gene")
+  if(length(rownames(selected_counts)) == length(rownames(annotations))) rownames(selected_counts) <- rownames(annotations)
+  return(selected_counts)
+}
+
+selectGSVA <- function(selected_patients, gs) {
+  gsva(as.matrix(selected_patients %>% column_to_rownames(var = "gene")), gs) %>%
+    return()
+}
+
+list_patients <- samples$Patient %>% unique() %>% as.list()
+
+list_selected_patients <- lapply(list_patients, filterPatient)
+list_selected_counts <- lapply(list_selected_patients, selectCounts, gene_annotations)
+list_selected_gsva <- lapply(list_selected_patients, selectGSVA, gene_sets)
+list_selected_counts_mini <- lapply(list_selected_patients, selectCounts, gene_annotations_mini)
+list_selected_gsva_mini <- lapply(list_selected_patients, selectGSVA, gene_sets_mini)
+
+
+```
+
+# Plotting heatmap
+
+```{r plotting}
+plotCounts <- function(selected_counts, patient, annotations, rows, cols, ext) {
+  plot <- pheatmap(as.data.frame(selected_counts %>% log10()), cutree_rows = rows, cutree_cols = cols, annotation_legend = FALSE, show_rownames = FALSE, annotation_row = as.data.frame(annotations))
+  ggsave(paste0(STR_OUTPUT, "heatmap_genes", ext, "-", patient, ".png"), plot, width = 8, height = 6)
+}
+
+mapply(plotCounts, list_selected_counts, list_patients, gene_annotations, 5, 2, "")
+mapply(plotCounts, list_selected_counts_mini, list_patients, gene_annotations_mini, 4, 2, "")
+
+plotGSVA <- function(selected_gsva, patient, ext = "") {
+  selected_gsva_log <- selected_gsva %>% log10()
+  plot <- pheatmap(selected_gsva_log[ , order(colnames(selected_gsva_log))], cluster_rows=FALSE, cluster_cols=FALSE, fontsize_row = 6)
+  ggsave(paste0(STR_OUTPUT, "heatmap_gsva", ext, "-", patient, ".png"), plot, width = 8, height = 6)
+}
+
+mapply(plotGSVA, list_selected_gsva, list_patients, "")
+mapply(plotGSVA, list_selected_gsva_mini, list_patients, "-mini")
+
+qcCounts <- function(counts, patient) {
+  counts %>% log10() %>%
+    mutate(m = rowSums(.)/length(colnames(counts))) %>%
+    select(m) %>%
+    rename(
+      !!patient := m
+    ) %>%
+    return()
+}
+
+qc <- mapply(qcCounts, list_selected_counts, list_patients) %>% as_tibble()
+
+qc %>%
+  summary()
+
+```
