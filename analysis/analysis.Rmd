@@ -13,6 +13,7 @@ library(readxl)
 library(pheatmap)
 library(GSVA)
 library(broom)
+library(viridis)
  
 STR_DATA <- "data/"
 STR_OUTPUT <- "output/"
@@ -224,8 +225,10 @@ qc %>%
 
 ```
 
-# PCA analysis across all samples and counts, including information about tumor vs stroma
-
+# PCA analysis across all samples and counts
+* Including information about: 
+ * Patient/slide (color)
+ * Tumor vs stroma (shape)
 ```{r pca}
 selected_samples <- counts %>%
   select(
@@ -234,7 +237,8 @@ selected_samples <- counts %>%
   ) %>%
   gather(key = segment, value = value, 2:(nrow(samples)+1)) %>%
   spread(gene, value = value) %>%
-  left_join(select(samples, segment = segmentname, patient = Patient, celltype, region = Region), by = "segment") %>%
+  left_join(select(samples, segment = segmentname, patient = Patient, celltype, region = Region, slide = SlideName), by = "segment") %>%
+  unite(patient, patient, slide, sep = "_", remove = TRUE, na.rm = FALSE) %>%
   column_to_rownames(var = "segment")
 
 pca_samples <- selected_samples %>% 
@@ -254,6 +258,7 @@ pca_samples %>%
   augment(selected_samples) %>%
   ggplot(aes(.fittedPC1, .fittedPC2, color = patient)) + 
   geom_point(aes(shape = celltype), size = 2) +
-  labs(title = "PCA", color = "Patient", shape = "Tumor/Stroma") + 
-  xlab("PC1") + ylab("PC2")
+  labs(title = "PCA", color = "Patient/Slide", shape = "Tumor/Stroma") + 
+  xlab("PC1") + ylab("PC2") +
+  scale_color_viridis_d()
 ```
