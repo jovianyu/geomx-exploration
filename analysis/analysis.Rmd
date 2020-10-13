@@ -13,7 +13,6 @@ library(readxl)
 library(pheatmap)
 library(GSVA)
 library(broom)
-library(pcaMethods)
  
 STR_DATA <- "data/"
 STR_OUTPUT <- "output/"
