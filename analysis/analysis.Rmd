@@ -12,6 +12,8 @@ library(tidyverse)
 library(readxl)
 library(pheatmap)
 library(GSVA)
+library(broom)
+library(pcaMethods)
  
 STR_DATA <- "data/"
 STR_OUTPUT <- "output/"
@@ -221,4 +223,36 @@ qc <- mapply(qcCounts, list_selected_counts, list_patients) %>% as_tibble()
 qc %>%
   summary()
 
+```
+
+```{r pca}
+selected_samples <- counts %>%
+  select(
+    gene,
+    as.vector(samples$segmentname)
+  ) %>%
+  gather(key = segment, value = value, 2:(nrow(samples)+1)) %>%
+  spread(gene, value = value) %>%
+  left_join(select(samples, segment = segmentname, patient = Patient, celltype, region = Region), by = "segment") %>%
+  column_to_rownames(var = "segment")
+
+pca_samples <- selected_samples %>% 
+  select(where(is.numeric)) %>%
+  prcomp(center = TRUE, scale = TRUE)
+
+pca_samples %>%
+  tidy(matrix = "eigenvalues") %>%
+  ggplot(aes(PC, percent)) +
+  geom_col(alpha = 0.8) +
+  scale_y_continuous(
+    labels = scales::percent_format(),
+  ) +
+  labs(title = "Scree Plot")
+
+pca_samples %>%
+  augment(selected_samples) %>%
+  ggplot(aes(.fittedPC1, .fittedPC2, color = patient)) + 
+  geom_point(aes(shape = celltype), size = 2) +
+  labs(title = "PCA", color = "Patient", shape = "Tumor/Stroma") + 
+  xlab("PC1") + ylab("PC2")
 ```
