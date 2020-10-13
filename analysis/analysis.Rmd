@@ -141,7 +141,7 @@ if(LOG_TARGET_GS) {
 
 # Filtering for ROI/Segments of interest, genes
 
-```{r filter}
+```{r filter, message=FALSE, warning=FALSE}
 filterPatient <- function(patient) {
   counts %>%
     select(
@@ -223,6 +223,8 @@ qc %>%
   summary()
 
 ```
+
+# PCA analysis across all samples and counts, including information about tumor vs stroma
 
 ```{r pca}
 selected_samples <- counts %>%
