@@ -23,19 +23,19 @@ LOG_TARGET_GS <- FALSE
 # Reading in Excel sheets
 
 ```{r data}
-samples <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 1) %>%
+samples <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 1) %>%
   mutate(
     celltype = ifelse(Tumor, "Tumor", ifelse(Stroma, "Stroma", "Tumor and Stroma")),
     segmentname = paste(celltype, Region, SlideName, ROILabel, sep = " | ")
   )
 
-counts <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 3) %>%
+counts <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 3) %>%
   rename(
     !!! setNames(samples$SegmentDisplayName, samples$segmentname),
     gene = TargetName
   )
 
-targets <- read_excel(paste0(STR_DATA,"Q3.xlsx"), sheet = 2)
+targets <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 2)
 
 target_groups <- targets$TargetGroup %>%
   paste(sep = ",") %>%
@@ -237,9 +237,10 @@ selected_samples <- counts %>%
   ) %>%
   gather(key = segment, value = value, 2:(nrow(samples)+1)) %>%
   spread(gene, value = value) %>%
-  left_join(select(samples, segment = segmentname, patient = Patient, celltype, region = Region, slide = SlideName), by = "segment") %>%
+  left_join(select(samples, segment = segmentname, patient = Patient, celltype, region = Region, slide = SlideName, batch), by = "segment") %>%
   unite(patient, patient, slide, sep = "_", remove = TRUE, na.rm = FALSE) %>%
-  column_to_rownames(var = "segment")
+  column_to_rownames(var = "segment") %>%
+  mutate(batch = factor(batch))
 
 pca_samples <- selected_samples %>% 
   select(where(is.numeric)) %>%
@@ -256,7 +257,7 @@ pca_samples %>%
 
 pca_samples %>%
   augment(selected_samples) %>%
-  ggplot(aes(.fittedPC1, .fittedPC2, color = patient)) + 
+  ggplot(aes(.fittedPC1, .fittedPC2, color = batch)) + 
   geom_point(aes(shape = celltype), size = 2) +
   labs(title = "PCA", color = "Patient/Slide", shape = "Tumor/Stroma") + 
   xlab("PC1") + ylab("PC2") +
