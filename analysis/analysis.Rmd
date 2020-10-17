@@ -17,25 +17,29 @@ library(viridis)
  
 STR_DATA <- "data/"
 STR_OUTPUT <- "output/"
+STR_INPUT_FILE <- "Probe QC.xlsx"
 LOG_TARGET_GS <- FALSE
 ```
 
 # Reading in Excel sheets
 
 ```{r data}
-samples <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 1) %>%
+batches <- read_excel(paste0(STR_DATA, "batches.xlsx"), sheet = 1)
+
+samples <- read_excel(paste0(STR_DATA, STR_INPUT_FILE), sheet = 1) %>%
   mutate(
     celltype = ifelse(Tumor, "Tumor", ifelse(Stroma, "Stroma", "Tumor and Stroma")),
     segmentname = paste(celltype, Region, SlideName, ROILabel, sep = " | ")
-  )
+  ) %>%
+  left_join(batches, by = "SlideName")
 
-counts <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 3) %>%
+counts <- read_excel(paste0(STR_DATA, STR_INPUT_FILE), sheet = 3) %>%
   rename(
     !!! setNames(samples$SegmentDisplayName, samples$segmentname),
     gene = TargetName
   )
 
-targets <- read_excel(paste0(STR_DATA,"Probe QC.xlsx"), sheet = 2)
+targets <- read_excel(paste0(STR_DATA, STR_INPUT_FILE), sheet = 2)
 
 target_groups <- targets$TargetGroup %>%
   paste(sep = ",") %>%
